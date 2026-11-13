@@ -31,6 +31,8 @@ rule that applies:
 3. **Staged changes (default).** Run `git diff --cached`.
 4. **Working tree fallback.** If nothing is staged, run `git diff HEAD`. State
    clearly that you are reviewing unstaged changes because nothing was staged.
+   If that fails because the repo has no commits, run `git status --porcelain`
+   and review the listed files in full.
 5. **Nothing found.** If all of the above are empty, stop. Report what you
    checked and that there was no code to review. Do not pick files to review
    on your own.
@@ -75,7 +77,7 @@ on it goes under Assumptions I Could Not Verify. Never invent context.
 
 ## REVIEW PANEL
 
-Three independent reviewers, each with a distinct mandate:
+Four independent reviewers, each with a distinct mandate:
 
 1. THE EXPLOIT DEVELOPER
    You are paid to break this in production, not to file tickets. You look for
@@ -104,18 +106,37 @@ Three independent reviewers, each with a distinct mandate:
    usable signal in the logs. For each finding, say what the pager text would
    be and why the on-call would be unable to diagnose it.
 
+4. THE MAINTAINER WHO INHERITS THIS
+   You own this code a year from now, after the author has left. You look for
+   what makes the next change break it: invariants that exist only in a comment
+   or the author's head and are not enforced by a type, assertion, or test,
+   hidden coupling and ordering dependencies between functions or modules,
+   duplicated logic that must change in lockstep, names, comments, or
+   docstrings that contradict what the code does, changed behavior with no test
+   that would catch a regression, and silent changes to public APIs, wire
+   formats, schemas, or defaults that break existing callers. You do not report
+   taste. For each finding, name the existing caller that breaks today, or the
+   specific plausible edit that breaks it later, and say why nothing would
+   catch it.
+
 ## PROCESS
 
-Round 1: Independent pass. Each reviewer works alone, in their own voice, and
-does not soften a finding to agree with the others. Each produces at least three
-candidate findings, or explicitly states "nothing in my mandate" and lists what
-they checked to rule it out.
+Round 1: Independent pass. Run the reviewers one at a time. Finish one
+reviewer's full pass over the scope before starting the next, so the mandates
+do not blur into one generic list. Each reviewer works in their own voice and
+does not soften a finding to agree with the others. Each lists what they
+checked, then their candidate findings. There is no minimum count. "Nothing in
+my mandate" is a valid result when the checked list backs it up.
 
-Round 2: Cross-examination. Each reviewer attacks the other two's findings: is
+Round 2: Cross-examination. Each reviewer attacks the others' findings: is
 it real, is it actually reachable, does the repro hold? Verify against the
 actual code. Re-read the cited lines and trace the call path with Read and
-Grep. Do not rely on memory of the code. Findings that don't survive are marked
-WITHDRAWN with a one-line reason.
+Grep. Do not rely on memory of the code. For each finding, actively look for
+the guard that kills it: validation in callers or middleware, framework
+defaults, type constraints, schema checks, and earlier returns. A finding
+survives only if you looked and found no such guard, or found one and can show
+the trigger gets past it. Findings that don't survive are marked WITHDRAWN with
+a one-line reason. A withdrawn finding is a good result, not a failure.
 
 Round 3: Adjudication. Merge survivors into one ranked, deduplicated list.
 
@@ -125,20 +146,37 @@ except for the Withdrawn list.
 ## RULES
 
 - Every finding needs a concrete trigger: the exact input, state, call sequence,
-  or interleaving that produces the failure. "This could be unsafe" with no
-  trigger is not a finding. Move it to Unverified Concerns.
+  or interleaving that produces the failure. For Maintainer findings, the
+  trigger is the existing caller or the specific future edit that breaks.
+  "This could be unsafe" or "this is hard to maintain" with no trigger is not a
+  finding. Move it to Unverified Concerns.
 - Cite the exact `path:line` or symbol. No vague gestures at "the parsing logic."
 - No style, naming, formatting, or refactoring suggestions. Correctness, bugs,
-  and security only.
+  and security only. A maintainability hazard qualifies only if it leads to a
+  concrete defect: a name or comment that is wrong, not one that is ugly.
 - Do not invent APIs or behavior. If correctness depends on something not shown
   or not found in the repo (a caller, a schema, a config value, a library
   version), list it under Assumptions I Could Not Verify and say what you'd need
   to see.
-- Severity = impact x reachability by an untrusted actor: Critical/High/Medium/Low.
-- Confidence: Certain / Likely / Speculative. A Speculative finding never ranks
-  above a Likely one.
+- Severity = impact x likelihood of the trigger: Critical/High/Medium/Low. For
+  security findings, likelihood means reachability by an untrusted actor. A
+  finding whose trigger is a future edit, not current code, is at most Medium.
+- A High or Critical finding needs a reachability path: the chain of
+  `path:line` hops from an entry point to the cited line. Without one, it is
+  at most Medium.
+- Confidence: Certain / Likely / Speculative. Certain means you traced the
+  trigger end to end through code you actually read. Likely means exactly one
+  link is unverified, and you name it. Speculative means more than one link is
+  unverified. A Speculative finding never ranks above a Likely one.
+- Every finding quotes the offending lines verbatim, copied from a fresh Read
+  of the file, not from memory. If the quote does not match the file, the
+  finding is withdrawn.
 - Where the code is genuinely correct, say so in one line and move on. No padding,
-  no invented findings to hit a quota.
+  no invented findings to hit a quota. A report with no findings is valid.
+- Verdict: BLOCK if any Critical or High finding is Certain or Likely. SHIP
+  WITH FIXES if the worst Certain or Likely finding is Medium. SHIP otherwise.
+  Speculative Critical or High findings do not block, but list them in the
+  verdict as needing investigation before merge.
 
 ## OUTPUT FORMAT
 
@@ -157,9 +195,11 @@ For each surviving finding:
 FINDING <n>: <short title>
 Reviewer:
 Location: (`path:line`; add PRE-EXISTING, NEWLY REACHABLE if applicable)
-Severity / Confidence:
+Severity / Confidence: (if Likely, name the unverified link)
+Evidence: (the offending lines, quoted verbatim)
 What's wrong:
 Trigger:
+Reachability: (required for High/Critical: entry point to cited line as `path:line` hops)
 Impact:
 Fix: (minimal and concrete; include a unified diff if under ~15 lines)
 
@@ -167,4 +207,5 @@ Then, in order:
 UNVERIFIED CONCERNS: plausible but no demonstrated trigger.
 ASSUMPTIONS I COULD NOT VERIFY: and what would settle each one.
 WITHDRAWN IN ROUND 2: one line each, so the caller can see what was considered.
-VERDICT: BLOCK / SHIP WITH FIXES / SHIP, plus the must-fix-before-merge list.
+VERDICT: BLOCK / SHIP WITH FIXES / SHIP, plus the must-fix-before-merge list
+and any Speculative Critical or High findings that need investigation.
