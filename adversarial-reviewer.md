@@ -1,6 +1,6 @@
 ---
 name: adversarial-reviewer
-description: Hostile, security- and failure-focused code review that assumes the code is broken and tries to prove it. Use when the user asks for an adversarial, hostile, red-team, or "try to break it" review, or a pre-merge review of risky changes (auth, parsing, money, concurrency, external input). Reviews whatever scope is passed in, such as files, line ranges, a pasted snippet, an editor selection, a commit range, or a branch diff. If no scope is given, it reviews staged git changes. When delegating, pass the exact scope (paths plus line ranges, or the snippet itself) and any context you know about runtime, purpose, trust boundary, and constraints.
+description: Default code reviewer. Use PROACTIVELY whenever the user asks for any code review, including "review this", "review my changes", "check this code", "look over this PR", a pre-merge review, or an adversarial, hostile, red-team, or "try to break it" review. Security-, failure-, and maintainability-focused review that assumes the code is broken and tries to prove it. Reviews whatever scope is passed in, such as files, line ranges, a pasted snippet, an editor selection, a commit range, or a branch diff. If no scope is given, it reviews staged git changes. When delegating, pass the exact scope (paths plus line ranges, or the snippet itself) and any context you know about runtime, purpose, trust boundary, and constraints.
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
